@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedule Data Formatter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .input-container, .output-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .output-container {
+            align-items: stretch;
+        }
+        .rich-text-editor {
+            min-height: 200px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            overflow: auto;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            align-self: flex-start;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .secondary-btn {
+            background-color: #3d6fbd;
+        }
+        .secondary-btn:hover {
+            background-color: #335ea1;
+        }
+        #outputText {
+            min-height: 260px;
+            border: 1px solid #ddd;
+            padding: 12px;
+            white-space: pre-wrap;
+            font-family: "Menlo", "Consolas", monospace;
+            line-height: 1.5;
+            background-color: #fafafa;
+        }
+        .message {
+            margin-top: 10px;
+            color: #666;
+        }
+        .year-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .file-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Форматування розкладу</h1>
+        <div class="input-container">
+            <h2>Вхідні дані</h2>
+            <p>Вставте дані з Google Sheets або Excel нижче:</p>
+            <div id="richEditor" class="rich-text-editor" contenteditable="true"></div>
+            <div class="year-selector">
+                <label for="yearSelect">Рік:</label>
+                <select id="yearSelect"></select>
+            </div>
+            <div class="file-selector">
+                <label for="peopleFileInput">people.csv:</label>
+                <input id="peopleFileInput" type="file" accept=".csv,text/csv,.txt">
+            </div>
+
+            <button id="formatBtn">Форматувати</button>
+        </div>
+        <div class="output-container">
+            <h2>Результат</h2>
+            <div id="message" class="message"></div>
+            <button id="copyBtn" class="secondary-btn" type="button">Копіювати результат</button>
+            <div id="outputText"></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const SHIFT_ALIASES = new Map([
+                ['РОТА', 'Рота'],
+                ['КПП 1', 'КПП 1'],
+                ['КПП1', 'КПП 1'],
+                ['КПП 2', 'КПП 2'],
+                ['КПП2', 'КПП 2'],
+                ['ВАРТА', 'Варта'],
+                ['ЧП', 'ЧП'],
+                ['ЧЧ', 'ЧЧ'],
+                ['ПАРК', 'Парк'],
+                ['ПОЖЕЖНИК', 'Пожежник'],
+                ['РГ', 'РГ']
+            ]);
+            const currentYear = new Date().getFullYear();
+            const EMBEDDED_PEOPLE_CSV = `"position","name"
+"майор","Товт В.П."
+"капітан","Беник О.С."
+"головний сержант","Боровський В.А."
+"старший сержант","Кукса А.Ю."
+"штаб-сержант","Черняєва Г.М."
+"старший сержант","Шагурський О.О."
+"лейтенант","Жабицький О.Л."
+"старший солдат","Філімонов О.О."
+"солдат","Коновал Д.Б."
+"солдат","Даниленко В.В."
+"солдат","Белєвич В.Г."
+"солдат","Кулик О.В."
+"солдат","Черванчук О.В."
+"молодший сержант","Телепей А.В."
+"старший солдат","Стельмах Ю.О."
+"солдат","Гросу М.В."
+"солдат","Чабанюк В.О."
+"солдат","Чевпотенко В.М."
+"солдат","Пришляк О.І."
+"солдат","Сторчеус А.М."
+"молодший сержант","Воличенко О.О."
+"старший солдат","Слісаренко Д.О."
+"солдат","Алієв Д.Е."
+"солдат","Кравець А.І."
+"солдат","Місник П.В."
+"солдат","Косинський А.О."
+"солдат","Кухар А.В."
+"капітан","Отроцький С.І."
+"старший солдат","Бугаєнко І.М."
+"старший солдат","Ромащук С.В."
+"солдат","Крамаренко В.О."
+"солдат","Боднар О.Ю."
+"солдат","Андрійчук К.В."
+"старший солдат","Хоменко Р.Г."
+"молодший сержант","Чабан І.О."
+"старший солдат","Бондаренко С.В."
+"солдат","Лук'яненко О.О."
+"солдат","Манохін О.А."
+"солдат","Гринчук В.О."
+"солдат","Павленко А.Г."
+"молодший сержант","Супруненко В.В."
+"старший солдат","Сєвєрінов Д.О."
+"солдат","Тараненко В.В."
+"солдат","Литовченко М.О."
+"солдат","Аверинський С.В."
+"солдат","Ватолін Р.Ю."
+"солдат","Токар О.Ю."
+"солдат","Крець О.М."
+"солдат","Чарквіані Т.Т."
+"сержант","Портнов О.В."
+"старший солдат","Жарчинський К.Г."
+"солдат","Ткаченко А.А."
+"солдат","Білик В.А."
+"солдат","Воронкін О.С."
+"солдат","Пестушко М.І."
+"солдат","Лисий М.О."
+"солдат","Безхлібний В.М."
+"молодший сержант","Коцюба Р.С."
+"старший солдат","Гайдаєнко І.М."
+"солдат","Гаркавенко Д.О."
+"солдат","Килюх Ю.О."
+"солдат","Черикбаєв С.М."
+"солдат","Омельченко М.О."
+"солдат","Сафрончик С.Г."
+"солдат","Авакян А.Г."
+"старший солдат","Жарчинський І.Г."
+"солдат","Лісовенко А.А."
+"старший солдат","Мельник С.С."
+"солдат","Чоловський О.Г."
+"молодший сержант","Дембіцький Б.В."`;
+
+            const editor = document.getElementById('richEditor');
+            const yearSelect = document.getElementById('yearSelect');
+            const peopleFileInput = document.getElementById('peopleFileInput');
+            const outputText = document.getElementById('outputText');
+            const messageDiv = document.getElementById('message');
+            let lastPlainOutput = '';
+
+            const peopleDirectoryState = {
+                rows: [],
+                loadError: null,
+                source: ''
+            };
+            const peopleDirectoryPromise = loadPeopleDirectory();
+            populateYearSelector();
+
+            editor.addEventListener('paste', function(e) {
+                e.preventDefault();
+                const text = e.clipboardData.getData('text/html') || e.clipboardData.getData('text');
+                document.execCommand('insertHTML', false, text);
+            });
+
+            document.getElementById('formatBtn').addEventListener('click', function() {
+                processData();
+            });
+
+            document.getElementById('copyBtn').addEventListener('click', async function() {
+                const value = lastPlainOutput;
+                if (!value.trim()) {
+                    return;
+                }
+
+                try {
+                    await navigator.clipboard.writeText(value);
+                    messageDiv.textContent = 'Результат скопійовано.';
+                } catch (_error) {
+                    messageDiv.textContent = 'Не вдалося скопіювати автоматично. Скопіюйте вручну.';
+                }
+            });
+            peopleFileInput.addEventListener('change', function(event) {
+                handlePeopleFileSelection(event.target.files);
+            });
+
+            async function processData() {
+                await peopleDirectoryPromise;
+                const inputHTML = editor.innerHTML;
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(inputHTML, 'text/html');
+                const selectedYear = getSelectedYear();
+
+                const processedData = processScheduleData(doc.body, selectedYear);
+                displayResults(processedData);
+            }
+
+            async function loadPeopleDirectory() {
+                try {
+                    const response = await fetch('people.csv', { cache: 'no-store' });
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const csvText = await response.text();
+                    const rows = parsePeopleRows(csvText);
+                    if (rows.length === 0) {
+                        throw new Error('people.csv has no valid rows');
+                    }
+                    setPeopleDirectoryRows(rows);
+                    peopleDirectoryState.source = 'file';
+                    peopleDirectoryState.loadError = null;
+                } catch (error) {
+                    const fallbackRows = parsePeopleRows(EMBEDDED_PEOPLE_CSV);
+                    if (fallbackRows.length > 0) {
+                        setPeopleDirectoryRows(fallbackRows);
+                        peopleDirectoryState.source = 'embedded';
+                        peopleDirectoryState.loadError = null;
+                        return;
+                    }
+
+                    peopleDirectoryState.loadError = error;
+                    peopleDirectoryState.source = '';
+                }
+            }
+
+            async function handlePeopleFileSelection(files) {
+                if (!files || files.length === 0) {
+                    return;
+                }
+
+                try {
+                    const file = files[0];
+                    const csvText = await file.text();
+                    const rows = parsePeopleRows(csvText);
+                    if (rows.length === 0) {
+                        throw new Error('selected people.csv has no valid rows');
+                    }
+
+                    setPeopleDirectoryRows(rows);
+                    peopleDirectoryState.source = 'uploaded';
+                    peopleDirectoryState.loadError = null;
+                    messageDiv.textContent = `people.csv завантажено: ${file.name} (${rows.length} рядків).`;
+                } catch (_error) {
+                    messageDiv.textContent = 'Не вдалося прочитати обраний people.csv.';
+                }
+            }
+
+            function parsePeopleRows(csvText) {
+                const lines = csvText
+                    .split(/\r?\n/)
+                    .map(function(line) {
+                        return line.trim();
+                    })
+                    .filter(function(line) {
+                        return line.length > 0;
+                    });
+
+                if (lines.length === 0) {
+                    return [];
+                }
+
+                const rows = [];
+                for (const line of lines) {
+                    const values = splitCsvLine(line);
+                    const normalizedValues = values.map(function(value) {
+                        return value.trim();
+                    }).filter(function(value) {
+                        return value.length > 0;
+                    });
+                    if (normalizedValues.length === 0) {
+                        continue;
+                    }
+
+                    if (normalizedValues.length >= 2 && normalizeComparableText(normalizedValues[0]) === 'POSITION' && normalizeComparableText(normalizedValues[1]) === 'NAME') {
+                        continue;
+                    }
+
+                    let rowText = '';
+                    if (normalizedValues.length >= 2) {
+                        rowText = `${normalizedValues[0]} ${normalizedValues[1]}`.trim();
+                    } else {
+                        rowText = normalizedValues[0];
+                    }
+
+                    if (/[A-Za-zА-Яа-яІіЇїЄєҐґ]/.test(rowText)) {
+                        rows.push(rowText);
+                    }
+                }
+
+                return rows;
+            }
+
+            function splitCsvLine(line) {
+                const values = line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+                return values.map(function(value) {
+                    const trimmed = value.trim();
+                    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+                        return trimmed.slice(1, -1).replace(/""/g, '"').trim();
+                    }
+                    return trimmed;
+                });
+            }
+
+            function setPeopleDirectoryRows(rows) {
+                peopleDirectoryState.rows = rows.slice();
+            }
+
+            function populateYearSelector() {
+                const startYear = currentYear - 2;
+                const endYear = currentYear + 2;
+
+                for (let year = startYear; year <= endYear; year += 1) {
+                    const option = document.createElement('option');
+                    option.value = String(year);
+                    option.textContent = String(year);
+                    yearSelect.appendChild(option);
+                }
+
+                yearSelect.value = String(currentYear);
+            }
+
+            function getSelectedYear() {
+                const selectedYear = Number(yearSelect.value);
+                return Number.isFinite(selectedYear) ? selectedYear : currentYear;
+            }
+
+            function processScheduleData(docBody, selectedYear) {
+                const rows = Array.from(docBody.querySelectorAll('tr'));
+                if (rows.length === 0) {
+                    return processPlainTextData(docBody.textContent || '', selectedYear);
+                }
+
+                const groupedSchedule = new Map();
+                const state = {
+                    currentDate: null,
+                    selectedYear: selectedYear,
+                    columnShiftMap: {},
+                    monthCounts: new Map(),
+                    monthFirstSeenOrder: new Map(),
+                    nextMonthOrder: 0
+                };
+
+                for (const row of rows) {
+                    const cells = getCells(row);
+                    if (cells.length === 0) {
+                        continue;
+                    }
+
+                    if (isDividerRow(cells)) {
+                        state.columnShiftMap = {};
+                        continue;
+                    }
+
+                    const rowDate = extractDateFromRow(cells, state);
+                    if (rowDate) {
+                        state.currentDate = rowDate;
+                        registerMonthOccurrence(rowDate, state);
+                        state.columnShiftMap = {};
+                        continue;
+                    }
+
+                    const shiftHeaderMap = extractShiftHeaderMap(cells);
+                    if (shiftHeaderMap) {
+                        state.columnShiftMap = shiftHeaderMap;
+                        continue;
+                    }
+
+                    if (!state.currentDate || Object.keys(state.columnShiftMap).length === 0) {
+                        continue;
+                    }
+
+                    const nameEntries = extractNameEntries(cells, state.columnShiftMap);
+                    for (const entry of nameEntries) {
+                        addShiftEntry(groupedSchedule, entry.name, state.currentDate, entry.shift, state.selectedYear);
+                    }
+                }
+
+                return {
+                    dates: convertScheduleMap(groupedSchedule),
+                    dominantMonth: getDominantMonth(state)
+                };
+            }
+
+            function getCells(row) {
+                return Array.from(row.children).filter(function(child) {
+                    return child.tagName === 'TD' || child.tagName === 'TH';
+                });
+            }
+
+            function isDividerRow(cells) {
+                const nonEmptyCells = cells.filter(function(cell) {
+                    return getCellText(cell).length > 0;
+                });
+                if (nonEmptyCells.length > 0) {
+                    return false;
+                }
+
+                const blackCells = cells.filter(isBlackCell).length;
+                return blackCells > 0 && blackCells >= Math.ceil(cells.length * 0.6);
+            }
+
+            function isBlackCell(cell) {
+                const colorCandidates = [
+                    cell.style.backgroundColor,
+                    cell.style.background,
+                    cell.getAttribute('bgcolor') || ''
+                ];
+
+                return colorCandidates.some(function(color) {
+                    return isBlackColor(color);
+                });
+            }
+
+            function isBlackColor(colorValue) {
+                if (!colorValue) {
+                    return false;
+                }
+
+                const normalizedColor = colorValue.toLowerCase().trim();
+                if (normalizedColor === 'black' || normalizedColor === '#000' || normalizedColor === '#000000') {
+                    return true;
+                }
+
+                const rgbMatch = normalizedColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                if (!rgbMatch) {
+                    return false;
+                }
+
+                const red = Number(rgbMatch[1]);
+                const green = Number(rgbMatch[2]);
+                const blue = Number(rgbMatch[3]);
+                return red <= 30 && green <= 30 && blue <= 30;
+            }
+
+            function extractDateFromRow(cells, state) {
+                const dateRegex = /(^|[^\d])(\d{1,2})\.(\d{1,2})([^\d]|$)/;
+
+                for (const cell of cells) {
+                    const cellText = getCellText(cell);
+                    const dateMatch = cellText.match(dateRegex);
+                    if (!dateMatch) {
+                        continue;
+                    }
+
+                    const day = Number(dateMatch[2]);
+                    const month = Number(dateMatch[3]);
+                    if (!isValidDayMonth(day, month)) {
+                        continue;
+                    }
+
+                    const year = state.selectedYear;
+                    return new Date(year, month - 1, day);
+                }
+
+                return null;
+            }
+
+            function isValidDayMonth(day, month) {
+                return day >= 1 && day <= 31 && month >= 1 && month <= 12;
+            }
+
+            function registerMonthOccurrence(date, state) {
+                const month = date.getMonth() + 1;
+                if (!state.monthFirstSeenOrder.has(month)) {
+                    state.monthFirstSeenOrder.set(month, state.nextMonthOrder);
+                    state.nextMonthOrder += 1;
+                }
+
+                const currentCount = state.monthCounts.get(month) || 0;
+                state.monthCounts.set(month, currentCount + 1);
+            }
+
+            function getDominantMonth(state) {
+                let selectedMonth = null;
+                let maxCount = -1;
+                let minOrder = Number.POSITIVE_INFINITY;
+
+                for (const [month, count] of state.monthCounts.entries()) {
+                    const monthOrder = state.monthFirstSeenOrder.get(month) || 0;
+                    if (count > maxCount || (count === maxCount && monthOrder < minOrder)) {
+                        selectedMonth = month;
+                        maxCount = count;
+                        minOrder = monthOrder;
+                    }
+                }
+
+                return selectedMonth;
+            }
+
+            function extractShiftHeaderMap(cells) {
+                const columnShiftMap = {};
+                let hasShift = false;
+                let hasUnsupportedText = false;
+                let columnIndex = 0;
+
+                for (const cell of cells) {
+                    const span = getColumnSpan(cell);
+                    const cellText = getCellText(cell);
+                    if (cellText.length > 0) {
+                        const normalizedShift = normalizeShift(cellText);
+                        if (!normalizedShift) {
+                            hasUnsupportedText = true;
+                        } else {
+                            hasShift = true;
+                            for (let index = columnIndex; index < columnIndex + span; index += 1) {
+                                columnShiftMap[index] = normalizedShift;
+                            }
+                        }
+                    }
+                    columnIndex += span;
+                }
+
+                if (!hasShift || hasUnsupportedText) {
+                    return null;
+                }
+
+                return columnShiftMap;
+            }
+
+            function getColumnSpan(cell) {
+                const span = Number(cell.getAttribute('colspan') || '1');
+                return Number.isFinite(span) && span > 0 ? span : 1;
+            }
+
+            function normalizeShift(rawText) {
+                const compact = rawText.replace(/\s+/g, ' ').trim().toUpperCase();
+                if (SHIFT_ALIASES.has(compact)) {
+                    return SHIFT_ALIASES.get(compact);
+                }
+
+                const noSpace = compact.replace(/\s+/g, '');
+                if (SHIFT_ALIASES.has(noSpace)) {
+                    return SHIFT_ALIASES.get(noSpace);
+                }
+
+                return null;
+            }
+
+            function extractNameEntries(cells, columnShiftMap) {
+                const entries = [];
+                let columnIndex = 0;
+
+                for (const cell of cells) {
+                    const span = getColumnSpan(cell);
+                    const shift = findShiftForCell(columnShiftMap, columnIndex, span);
+                    if (shift) {
+                        const names = extractNamesFromCell(cell);
+                        for (const name of names) {
+                            if (isValidPersonName(name)) {
+                                entries.push({ name: name, shift: shift });
+                            }
+                        }
+                    }
+
+                    columnIndex += span;
+                }
+
+                return entries;
+            }
+
+            function findShiftForCell(columnShiftMap, startColumn, span) {
+                for (let index = startColumn; index < startColumn + span; index += 1) {
+                    if (columnShiftMap[index]) {
+                        return columnShiftMap[index];
+                    }
+                }
+
+                for (let index = startColumn - 1; index >= 0; index -= 1) {
+                    if (columnShiftMap[index]) {
+                        return columnShiftMap[index];
+                    }
+                }
+
+                return null;
+            }
+
+            function extractNamesFromCell(cell) {
+                const htmlWithBreaks = cell.innerHTML
+                    .replace(/<br\s*\/?>/gi, '\n')
+                    .replace(/<\/(div|p|li)>/gi, '\n');
+
+                const temp = document.createElement('div');
+                temp.innerHTML = htmlWithBreaks;
+
+                const rawText = temp.textContent || '';
+                const lines = rawText
+                    .split(/\r?\n/)
+                    .map(function(line) {
+                        return line.replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
+                    })
+                    .filter(function(line) {
+                        return line.length > 0;
+                    });
+
+                return lines.length > 0 ? lines : [getCellText(cell)];
+            }
+
+            function isValidPersonName(text) {
+                if (!text || text.length < 2) {
+                    return false;
+                }
+
+                if (normalizeShift(text)) {
+                    return false;
+                }
+
+                if (/\d/.test(text)) {
+                    return false;
+                }
+
+                return /[A-Za-zА-Яа-яІіЇїЄєҐґ]/.test(text);
+            }
+
+            function addShiftEntry(groupedSchedule, personName, startDate, shift, selectedYear) {
+                const dateLabel = formatDate(startDate, selectedYear);
+                if (!groupedSchedule.has(dateLabel)) {
+                    groupedSchedule.set(dateLabel, {
+                        sortDate: startDate.getTime(),
+                        keys: new Set(),
+                        shifts: new Map()
+                    });
+                }
+
+                const normalizedName = normalizeComparableText(personName);
+                const uniqueKey = `${shift}|${normalizedName}`;
+                const dateGroup = groupedSchedule.get(dateLabel);
+                if (dateGroup.keys.has(uniqueKey)) {
+                    return;
+                }
+
+                if (!dateGroup.shifts.has(shift)) {
+                    dateGroup.shifts.set(shift, []);
+                }
+                dateGroup.shifts.get(shift).push(personName);
+                dateGroup.keys.add(uniqueKey);
+            }
+
+            function normalizeComparableText(value) {
+                return (value || '')
+                    .replace(/\u00A0/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .toUpperCase();
+            }
+
+            function extractSurname(value) {
+                const clean = (value || '')
+                    .replace(/[^A-Za-zА-Яа-яІіЇїЄєҐґ'\- ]/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                if (!clean) {
+                    return '';
+                }
+                return clean.split(' ')[0] || '';
+            }
+
+            function formatDate(date, selectedYear) {
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const year = Number.isFinite(selectedYear) ? selectedYear : date.getFullYear();
+                return `${day}.${month}.${year}`;
+            }
+
+            function convertScheduleMap(groupedSchedule) {
+                return Array.from(groupedSchedule.entries())
+                    .map(function(entry) {
+                        const dateLabel = entry[0];
+                        const value = entry[1];
+                        return {
+                            dateLabel: dateLabel,
+                            sortDate: value.sortDate,
+                            shifts: value.shifts
+                        };
+                    })
+                    .sort(function(first, second) {
+                        return first.sortDate - second.sortDate;
+                    });
+            }
+
+            function processPlainTextData(rawText, selectedYear) {
+                const lines = rawText
+                    .split(/\r?\n/)
+                    .map(function(line) {
+                        return line.replace(/\u00A0/g, ' ').trim();
+                    })
+                    .filter(function(line) {
+                        return line.length > 0;
+                    });
+
+                const groupedSchedule = new Map();
+                const state = {
+                    currentDate: null,
+                    selectedYear: selectedYear,
+                    columnShiftMap: {},
+                    monthCounts: new Map(),
+                    monthFirstSeenOrder: new Map(),
+                    nextMonthOrder: 0
+                };
+
+                for (const line of lines) {
+                    const columns = line.split('\t').map(function(column) {
+                        return column.replace(/\s+/g, ' ').trim();
+                    });
+
+                    const date = extractDateFromColumns(columns, state);
+                    if (date) {
+                        state.currentDate = date;
+                        registerMonthOccurrence(date, state);
+                        state.columnShiftMap = {};
+                        continue;
+                    }
+
+                    const shiftMap = extractShiftHeaderMapFromColumns(columns);
+                    if (shiftMap) {
+                        state.columnShiftMap = shiftMap;
+                        continue;
+                    }
+
+                    if (!state.currentDate || Object.keys(state.columnShiftMap).length === 0) {
+                        continue;
+                    }
+
+                    for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
+                        const value = columns[columnIndex];
+                        if (!value) {
+                            continue;
+                        }
+
+                        const shift = findShiftForCell(state.columnShiftMap, columnIndex, 1);
+                        if (!shift) {
+                            continue;
+                        }
+
+                        if (isValidPersonName(value)) {
+                            addShiftEntry(groupedSchedule, value, state.currentDate, shift, state.selectedYear);
+                        }
+                    }
+                }
+
+                return {
+                    dates: convertScheduleMap(groupedSchedule),
+                    dominantMonth: getDominantMonth(state)
+                };
+            }
+
+            function extractDateFromColumns(columns, state) {
+                const dateRegex = /(^|[^\d])(\d{1,2})\.(\d{1,2})([^\d]|$)/;
+
+                for (const column of columns) {
+                    const dateMatch = column.match(dateRegex);
+                    if (!dateMatch) {
+                        continue;
+                    }
+
+                    const day = Number(dateMatch[2]);
+                    const month = Number(dateMatch[3]);
+                    if (!isValidDayMonth(day, month)) {
+                        continue;
+                    }
+
+                    const year = state.selectedYear;
+                    return new Date(year, month - 1, day);
+                }
+
+                return null;
+            }
+
+            function extractShiftHeaderMapFromColumns(columns) {
+                const map = {};
+                let hasShift = false;
+                let hasUnsupportedText = false;
+
+                for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
+                    const value = columns[columnIndex];
+                    if (!value) {
+                        continue;
+                    }
+
+                    const shift = normalizeShift(value);
+                    if (!shift) {
+                        hasUnsupportedText = true;
+                    } else {
+                        map[columnIndex] = shift;
+                        hasShift = true;
+                    }
+                }
+
+                if (!hasShift || hasUnsupportedText) {
+                    return null;
+                }
+
+                return map;
+            }
+
+            function getCellText(cell) {
+                return (cell.textContent || '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
+            }
+
+            function extractInitials(value) {
+                const match = (value || '').match(/([А-ЯІЇЄҐA-Z])\.\s*([А-ЯІЇЄҐA-Z])\./i);
+                if (!match) {
+                    return '';
+                }
+                return `${match[1].toUpperCase()}.${match[2].toUpperCase()}.`;
+            }
+
+            function resolvePersonRow(rawName) {
+                const surname = extractSurname(rawName);
+                const normalizedSurname = normalizeComparableText(surname);
+                if (!normalizedSurname) {
+                    return null;
+                }
+
+                const candidates = peopleDirectoryState.rows.filter(function(row) {
+                    return normalizeComparableText(row).includes(normalizedSurname);
+                });
+                if (candidates.length === 0) {
+                    return null;
+                }
+
+                if (candidates.length === 1) {
+                    return candidates[0];
+                }
+
+                const initials = extractInitials(rawName);
+                if (!initials) {
+                    return candidates[0];
+                }
+
+                const normalizedInitials = normalizeComparableText(initials);
+                for (const candidate of candidates) {
+                    if (normalizeComparableText(extractInitials(candidate)) === normalizedInitials) {
+                        return candidate;
+                    }
+                }
+
+                return candidates[0];
+            }
+
+            function escapeHtml(value) {
+                return String(value)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            function displayResults(processedData) {
+                const dateEntries = processedData && processedData.dates ? processedData.dates : [];
+                outputText.innerHTML = '';
+                lastPlainOutput = '';
+
+                if (dateEntries.length === 0) {
+                    messageDiv.textContent = 'Не вдалося знайти дані для обробки. Переконайтеся, що формат даних правильний.';
+                    return;
+                }
+
+                const textLines = [];
+                const htmlLines = [];
+                const unmatched = new Set();
+                let totalResolvedPeople = 0;
+
+                for (const dateEntry of dateEntries) {
+                    textLines.push(dateEntry.dateLabel);
+                    htmlLines.push(`<strong>${escapeHtml(dateEntry.dateLabel)}</strong>`);
+
+                    const shiftEntries = Array.from(dateEntry.shifts.entries());
+                    for (let shiftIndex = 0; shiftIndex < shiftEntries.length; shiftIndex += 1) {
+                        const shiftEntry = shiftEntries[shiftIndex];
+                        const shift = shiftEntry[0];
+                        const names = shiftEntry[1];
+                        textLines.push(shift);
+                        htmlLines.push(escapeHtml(shift));
+
+                        for (const rawName of names) {
+                            const resolvedRow = resolvePersonRow(rawName);
+                            if (resolvedRow) {
+                                textLines.push(resolvedRow);
+                                htmlLines.push(escapeHtml(resolvedRow));
+                                totalResolvedPeople += 1;
+                            } else {
+                                textLines.push(rawName);
+                                htmlLines.push(escapeHtml(rawName));
+                                unmatched.add(rawName);
+                            }
+                        }
+
+                        if (shiftIndex < shiftEntries.length - 1) {
+                            textLines.push('');
+                            htmlLines.push('');
+                        }
+                    }
+
+                    textLines.push('');
+                    htmlLines.push('');
+                }
+
+                if (textLines.length > 0 && textLines[textLines.length - 1] === '') {
+                    textLines.pop();
+                }
+                if (htmlLines.length > 0 && htmlLines[htmlLines.length - 1] === '') {
+                    htmlLines.pop();
+                }
+
+                lastPlainOutput = textLines.join('\n');
+                outputText.innerHTML = htmlLines.join('<br>');
+
+                if (peopleDirectoryState.loadError) {
+                    messageDiv.textContent = 'Не вдалося завантажити people.csv. Показано початкові прізвища без посад.';
+                    return;
+                }
+
+                if (unmatched.size > 0) {
+                    messageDiv.textContent = `Сформовано ${dateEntries.length} дат. Збігів у people.csv: ${totalResolvedPeople}. Без збігу: ${unmatched.size}.`;
+                    return;
+                }
+
+                messageDiv.textContent = `Сформовано ${dateEntries.length} дат. Усі прізвища зіставлено з people.csv.`;
+            }
+        });
+    </script>
+</body>
+</html>
