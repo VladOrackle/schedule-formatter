@@ -59,6 +59,27 @@
             margin-top: 10px;
             color: #666;
         }
+        .warning-block {
+            display: none;
+            padding: 12px 14px;
+            border: 1px solid #e0b252;
+            background-color: #fff7df;
+            color: #7a4f00;
+        }
+        .warning-block.is-visible {
+            display: block;
+        }
+        .warning-block h3 {
+            margin: 0 0 8px;
+            font-size: 16px;
+        }
+        .warning-block p {
+            margin: 0 0 8px;
+        }
+        .warning-block ul {
+            margin: 0;
+            padding-left: 20px;
+        }
         .year-selector {
             display: flex;
             align-items: center;
@@ -84,6 +105,11 @@
         <div class="output-container">
             <h2>Результат</h2>
             <div id="message" class="message"></div>
+            <div id="skippedShiftsWarning" class="warning-block">
+                <h3>Пропущені зміни</h3>
+                <p>Ці назви змін не вдалося розпізнати, тому відповідні колонки було пропущено:</p>
+                <ul id="skippedShiftsList"></ul>
+            </div>
             <table id="outputTable">
                 <thead>
                     <tr>
@@ -114,6 +140,7 @@
                 ['РГ', 'РГ']
             ]);
             const RG_SHIFT = 'РГ';
+            const UNSUPPORTED_SHIFT = '__UNSUPPORTED_SHIFT__';
             const currentYear = new Date().getFullYear();
 
             const editor = document.getElementById('richEditor');
@@ -170,6 +197,7 @@
                     currentDate: null,
                     selectedYear: selectedYear,
                     columnShiftMap: {},
+                    skippedShifts: new Map(),
                     monthCounts: new Map(),
                     monthFirstSeenOrder: new Map(),
                     nextMonthOrder: 0
@@ -194,7 +222,8 @@
                         continue;
                     }
 
-                    const shiftHeaderMap = extractShiftHeaderMap(cells);
+                    const shouldRecordSkippedShifts = Object.keys(state.columnShiftMap).length === 0;
+                    const shiftHeaderMap = extractShiftHeaderMap(cells, state, shouldRecordSkippedShifts);
                     if (shiftHeaderMap) {
                         state.columnShiftMap = shiftHeaderMap;
                         continue;
@@ -212,6 +241,7 @@
 
                 return {
                     schedules: convertSchedulesMap(personSchedules),
+                    skippedShifts: getSkippedShifts(state),
                     dominantMonth: getDominantMonth(state)
                 };
             }
@@ -322,10 +352,9 @@
                 return selectedMonth;
             }
 
-            function extractShiftHeaderMap(cells) {
+            function extractShiftHeaderMap(cells, state, shouldRecordSkippedShifts) {
                 const columnShiftMap = {};
                 let hasShift = false;
-                let hasUnsupportedText = false;
                 let columnIndex = 0;
 
                 for (const cell of cells) {
@@ -334,7 +363,12 @@
                     if (cellText.length > 0) {
                         const normalizedShift = normalizeShift(cellText);
                         if (!normalizedShift) {
-                            hasUnsupportedText = true;
+                            for (let index = columnIndex; index < columnIndex + span; index += 1) {
+                                columnShiftMap[index] = UNSUPPORTED_SHIFT;
+                            }
+                            if (shouldRecordSkippedShifts) {
+                                recordSkippedShift(state, cellText);
+                            }
                         } else {
                             hasShift = true;
                             for (let index = columnIndex; index < columnIndex + span; index += 1) {
@@ -345,7 +379,7 @@
                     columnIndex += span;
                 }
 
-                if (!hasShift || hasUnsupportedText) {
+                if (!hasShift) {
                     return null;
                 }
 
@@ -369,6 +403,51 @@
                 }
 
                 return null;
+            }
+
+            function recordSkippedShift(state, rawShift) {
+                if (!state || !state.skippedShifts) {
+                    return;
+                }
+
+                const normalizedValue = (rawShift || '').replace(/\s+/g, ' ').trim();
+                if (!normalizedValue) {
+                    return;
+                }
+
+                const dateKey = state.currentDate ? toIsoDate(state.currentDate) : 'unknown-date';
+                const dateLabel = state.currentDate ? formatDate(state.currentDate, state.selectedYear) : 'дата не визначена';
+
+                if (!state.skippedShifts.has(normalizedValue)) {
+                    state.skippedShifts.set(normalizedValue, new Map());
+                }
+
+                state.skippedShifts.get(normalizedValue).set(dateKey, dateLabel);
+            }
+
+            function getSkippedShifts(state) {
+                if (!state || !state.skippedShifts) {
+                    return [];
+                }
+
+                return Array.from(state.skippedShifts.entries())
+                    .map(function(entry) {
+                        const dates = Array.from(entry[1].entries())
+                            .sort(function(first, second) {
+                                return first[0].localeCompare(second[0], 'uk');
+                            })
+                            .map(function(dateEntry) {
+                                return dateEntry[1];
+                            });
+
+                        return {
+                            label: entry[0],
+                            dates: dates
+                        };
+                    })
+                    .sort(function(first, second) {
+                        return first.label.localeCompare(second.label, 'uk');
+                    });
             }
 
             function extractNameEntries(cells, columnShiftMap) {
@@ -395,14 +474,22 @@
 
             function findShiftForCell(columnShiftMap, startColumn, span) {
                 for (let index = startColumn; index < startColumn + span; index += 1) {
-                    if (columnShiftMap[index]) {
-                        return columnShiftMap[index];
+                    const shiftValue = columnShiftMap[index];
+                    if (shiftValue === UNSUPPORTED_SHIFT) {
+                        return null;
+                    }
+                    if (shiftValue) {
+                        return shiftValue;
                     }
                 }
 
                 for (let index = startColumn - 1; index >= 0; index -= 1) {
-                    if (columnShiftMap[index]) {
-                        return columnShiftMap[index];
+                    const shiftValue = columnShiftMap[index];
+                    if (shiftValue === UNSUPPORTED_SHIFT) {
+                        return null;
+                    }
+                    if (shiftValue) {
+                        return shiftValue;
                     }
                 }
 
@@ -521,6 +608,7 @@
                     currentDate: null,
                     selectedYear: selectedYear,
                     columnShiftMap: {},
+                    skippedShifts: new Map(),
                     monthCounts: new Map(),
                     monthFirstSeenOrder: new Map(),
                     nextMonthOrder: 0
@@ -539,7 +627,8 @@
                         continue;
                     }
 
-                    const shiftMap = extractShiftHeaderMapFromColumns(columns);
+                    const shouldRecordSkippedShifts = Object.keys(state.columnShiftMap).length === 0;
+                    const shiftMap = extractShiftHeaderMapFromColumns(columns, state, shouldRecordSkippedShifts);
                     if (shiftMap) {
                         state.columnShiftMap = shiftMap;
                         continue;
@@ -568,6 +657,7 @@
 
                 return {
                     schedules: convertSchedulesMap(personSchedules),
+                    skippedShifts: getSkippedShifts(state),
                     dominantMonth: getDominantMonth(state)
                 };
             }
@@ -594,10 +684,9 @@
                 return null;
             }
 
-            function extractShiftHeaderMapFromColumns(columns) {
+            function extractShiftHeaderMapFromColumns(columns, state, shouldRecordSkippedShifts) {
                 const map = {};
                 let hasShift = false;
-                let hasUnsupportedText = false;
 
                 for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
                     const value = columns[columnIndex];
@@ -607,14 +696,17 @@
 
                     const shift = normalizeShift(value);
                     if (!shift) {
-                        hasUnsupportedText = true;
+                        map[columnIndex] = UNSUPPORTED_SHIFT;
+                        if (shouldRecordSkippedShifts) {
+                            recordSkippedShift(state, value);
+                        }
                     } else {
                         map[columnIndex] = shift;
                         hasShift = true;
                     }
                 }
 
-                if (!hasShift || hasUnsupportedText) {
+                if (!hasShift) {
                     return null;
                 }
 
@@ -664,14 +756,21 @@
 
             function displayResults(processedData) {
                 const results = processedData && processedData.schedules ? processedData.schedules : {};
+                const skippedShifts = processedData && processedData.skippedShifts ? processedData.skippedShifts : [];
                 const dominantMonth = processedData ? processedData.dominantMonth : null;
                 const outputBody = document.getElementById('outputBody');
                 const messageDiv = document.getElementById('message');
+                const skippedShiftsWarning = document.getElementById('skippedShiftsWarning');
+                const skippedShiftsList = document.getElementById('skippedShiftsList');
                 outputBody.innerHTML = '';
+                skippedShiftsList.innerHTML = '';
+                skippedShiftsWarning.classList.remove('is-visible');
 
                 const names = Object.keys(results).sort(function(first, second) {
                     return first.localeCompare(second, 'uk');
                 });
+
+                renderSkippedShifts(skippedShifts, skippedShiftsWarning, skippedShiftsList);
 
                 if (names.length === 0) {
                     messageDiv.textContent = 'Не вдалося знайти дані для обробки. Переконайтеся, що формат даних правильний.';
@@ -716,6 +815,20 @@
                     row.appendChild(datesCell);
                     outputBody.appendChild(row);
                 }
+            }
+
+            function renderSkippedShifts(skippedShifts, warningBlock, warningList) {
+                if (!warningBlock || !warningList || skippedShifts.length === 0) {
+                    return;
+                }
+
+                for (const item of skippedShifts) {
+                    const listItem = document.createElement('li');
+                    listItem.textContent = `${item.label}: ${item.dates.join(', ')}`;
+                    warningList.appendChild(listItem);
+                }
+
+                warningBlock.classList.add('is-visible');
             }
         });
     </script>
