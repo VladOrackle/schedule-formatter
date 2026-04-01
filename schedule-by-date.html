@@ -122,6 +122,16 @@
                 <p>Ці назви змін не вдалося розпізнати, тому відповідні колонки було пропущено:</p>
                 <ul id="skippedShiftsList"></ul>
             </div>
+            <div id="skippedEntriesWarning" class="warning-block">
+                <h3>Пропущені значення</h3>
+                <p>Ці значення в розпізнаних змінах не вдалося обробити, тому їх не включено в результат:</p>
+                <ul id="skippedEntriesList"></ul>
+            </div>
+            <div id="unmatchedEntriesWarning" class="warning-block">
+                <h3>Незіставлені записи</h3>
+                <p>Ці значення додано в результат як є, бо для них не знайдено збігу в people.csv:</p>
+                <ul id="unmatchedEntriesList"></ul>
+            </div>
             <button id="copyBtn" class="secondary-btn" type="button">Копіювати результат</button>
             <div id="outputText"></div>
         </div>
@@ -314,6 +324,7 @@
                     selectedYear: selectedYear,
                     columnShiftMap: {},
                     skippedShifts: new Map(),
+                    skippedEntries: new Map(),
                     monthCounts: new Map(),
                     monthFirstSeenOrder: new Map(),
                     nextMonthOrder: 0
@@ -349,7 +360,7 @@
                         continue;
                     }
 
-                    const nameEntries = extractNameEntries(cells, state.columnShiftMap);
+                    const nameEntries = extractNameEntries(cells, state.columnShiftMap, state);
                     for (const entry of nameEntries) {
                         addShiftEntry(groupedSchedule, entry.name, state.currentDate, entry.shift, state.selectedYear);
                     }
@@ -358,6 +369,7 @@
                 return {
                     dates: convertScheduleMap(groupedSchedule),
                     skippedShifts: getSkippedShifts(state),
+                    skippedEntries: getSkippedEntries(state),
                     dominantMonth: getDominantMonth(state)
                 };
             }
@@ -547,6 +559,60 @@
                     });
             }
 
+            function recordSkippedEntry(state, rawValue, shift) {
+                if (!state || !state.skippedEntries) {
+                    return;
+                }
+
+                const normalizedValue = (rawValue || '').replace(/\s+/g, ' ').trim();
+                if (!normalizedValue) {
+                    return;
+                }
+
+                const key = `${shift}:::${normalizedValue}`;
+                const dateKey = state.currentDate ? toIsoDate(state.currentDate) : 'unknown-date';
+                const dateLabel = state.currentDate ? formatDate(state.currentDate, state.selectedYear) : 'дата не визначена';
+
+                if (!state.skippedEntries.has(key)) {
+                    state.skippedEntries.set(key, {
+                        shift: shift,
+                        value: normalizedValue,
+                        dates: new Map()
+                    });
+                }
+
+                state.skippedEntries.get(key).dates.set(dateKey, dateLabel);
+            }
+
+            function getSkippedEntries(state) {
+                if (!state || !state.skippedEntries) {
+                    return [];
+                }
+
+                return Array.from(state.skippedEntries.values())
+                    .map(function(entry) {
+                        const dates = Array.from(entry.dates.entries())
+                            .sort(function(first, second) {
+                                return first[0].localeCompare(second[0], 'uk');
+                            })
+                            .map(function(dateEntry) {
+                                return dateEntry[1];
+                            });
+
+                        return {
+                            shift: entry.shift,
+                            value: entry.value,
+                            dates: dates
+                        };
+                    })
+                    .sort(function(first, second) {
+                        if (first.shift !== second.shift) {
+                            return first.shift.localeCompare(second.shift, 'uk');
+                        }
+                        return first.value.localeCompare(second.value, 'uk');
+                    });
+            }
+
             function toIsoDate(date) {
                 const year = date.getFullYear();
                 const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -573,7 +639,7 @@
                 return null;
             }
 
-            function extractNameEntries(cells, columnShiftMap) {
+            function extractNameEntries(cells, columnShiftMap, state) {
                 const entries = [];
                 let columnIndex = 0;
 
@@ -583,8 +649,10 @@
                     if (shift) {
                         const names = extractNamesFromCell(cell);
                         for (const name of names) {
-                            if (isValidPersonName(name)) {
+                            if (isValidShiftEntryValue(name)) {
                                 entries.push({ name: name, shift: shift });
+                            } else if (shouldRecordSkippedEntry(name)) {
+                                recordSkippedEntry(state, name, shift);
                             }
                         }
                     }
@@ -640,7 +708,7 @@
                 return lines.length > 0 ? lines : [getCellText(cell)];
             }
 
-            function isValidPersonName(text) {
+            function isValidShiftEntryValue(text) {
                 if (!text || text.length < 2) {
                     return false;
                 }
@@ -649,11 +717,23 @@
                     return false;
                 }
 
-                if (/\d/.test(text)) {
+                return /[A-Za-zА-Яа-яІіЇїЄєҐґ]/.test(text);
+            }
+
+            function shouldRecordSkippedEntry(text) {
+                if (!text) {
                     return false;
                 }
 
-                return /[A-Za-zА-Яа-яІіЇїЄєҐґ]/.test(text);
+                if (normalizeShift(text)) {
+                    return false;
+                }
+
+                if (isValidShiftEntryValue(text)) {
+                    return false;
+                }
+
+                return /[A-Za-zА-Яа-яІіЇїЄєҐґ0-9]/.test(text);
             }
 
             function addShiftEntry(groupedSchedule, personName, startDate, shift, selectedYear) {
@@ -738,6 +818,7 @@
                     selectedYear: selectedYear,
                     columnShiftMap: {},
                     skippedShifts: new Map(),
+                    skippedEntries: new Map(),
                     monthCounts: new Map(),
                     monthFirstSeenOrder: new Map(),
                     nextMonthOrder: 0
@@ -778,8 +859,10 @@
                             continue;
                         }
 
-                        if (isValidPersonName(value)) {
+                        if (isValidShiftEntryValue(value)) {
                             addShiftEntry(groupedSchedule, value, state.currentDate, shift, state.selectedYear);
+                        } else if (shouldRecordSkippedEntry(value)) {
+                            recordSkippedEntry(state, value, shift);
                         }
                     }
                 }
@@ -787,6 +870,7 @@
                 return {
                     dates: convertScheduleMap(groupedSchedule),
                     skippedShifts: getSkippedShifts(state),
+                    skippedEntries: getSkippedEntries(state),
                     dominantMonth: getDominantMonth(state)
                 };
             }
@@ -896,17 +980,59 @@
                     .replace(/'/g, '&#39;');
             }
 
+            function addUnmatchedEntry(unmatchedMap, rawName, shift, dateLabel) {
+                const normalizedValue = (rawName || '').replace(/\s+/g, ' ').trim();
+                if (!normalizedValue) {
+                    return;
+                }
+
+                const key = `${shift}:::${normalizedValue}`;
+                if (!unmatchedMap.has(key)) {
+                    unmatchedMap.set(key, {
+                        value: normalizedValue,
+                        shift: shift,
+                        dates: new Set()
+                    });
+                }
+
+                unmatchedMap.get(key).dates.add(dateLabel);
+            }
+
+            function renderUnmatchedEntries(unmatchedEntries, warningBlock, warningList) {
+                if (!warningBlock || !warningList || unmatchedEntries.length === 0) {
+                    return;
+                }
+
+                for (const item of unmatchedEntries) {
+                    const listItem = document.createElement('li');
+                    listItem.textContent = `${item.value} (${item.shift}): ${item.dates.join(', ')}`;
+                    warningList.appendChild(listItem);
+                }
+
+                warningBlock.classList.add('is-visible');
+            }
+
             function displayResults(processedData) {
                 const dateEntries = processedData && processedData.dates ? processedData.dates : [];
                 const skippedShifts = processedData && processedData.skippedShifts ? processedData.skippedShifts : [];
+                const skippedEntries = processedData && processedData.skippedEntries ? processedData.skippedEntries : [];
                 outputText.innerHTML = '';
                 lastPlainOutput = '';
                 const skippedShiftsWarning = document.getElementById('skippedShiftsWarning');
                 const skippedShiftsList = document.getElementById('skippedShiftsList');
+                const skippedEntriesWarning = document.getElementById('skippedEntriesWarning');
+                const skippedEntriesList = document.getElementById('skippedEntriesList');
+                const unmatchedEntriesWarning = document.getElementById('unmatchedEntriesWarning');
+                const unmatchedEntriesList = document.getElementById('unmatchedEntriesList');
                 skippedShiftsList.innerHTML = '';
+                skippedEntriesList.innerHTML = '';
+                unmatchedEntriesList.innerHTML = '';
                 skippedShiftsWarning.classList.remove('is-visible');
+                skippedEntriesWarning.classList.remove('is-visible');
+                unmatchedEntriesWarning.classList.remove('is-visible');
 
                 renderSkippedShifts(skippedShifts, skippedShiftsWarning, skippedShiftsList);
+                renderSkippedEntries(skippedEntries, skippedEntriesWarning, skippedEntriesList);
 
                 if (dateEntries.length === 0) {
                     messageDiv.textContent = 'Не вдалося знайти дані для обробки. Переконайтеся, що формат даних правильний.';
@@ -915,7 +1041,7 @@
 
                 const textLines = [];
                 const htmlLines = [];
-                const unmatched = new Set();
+                const unmatched = new Map();
                 let totalResolvedPeople = 0;
 
                 for (const dateEntry of dateEntries) {
@@ -939,7 +1065,7 @@
                             } else {
                                 textLines.push(rawName);
                                 htmlLines.push(escapeHtml(rawName));
-                                unmatched.add(rawName);
+                                addUnmatchedEntry(unmatched, rawName, shift, dateEntry.dateLabel);
                             }
                         }
 
@@ -963,8 +1089,36 @@
                 lastPlainOutput = textLines.join('\n');
                 outputText.innerHTML = htmlLines.join('<br>');
 
-                if (unmatched.size > 0) {
-                    messageDiv.textContent = `Сформовано ${dateEntries.length} дат. Збігів у people.csv: ${totalResolvedPeople}. Без збігу: ${unmatched.size}.`;
+                const unmatchedEntries = Array.from(unmatched.values())
+                    .map(function(entry) {
+                        return {
+                            value: entry.value,
+                            shift: entry.shift,
+                            dates: Array.from(entry.dates.values()).sort(function(first, second) {
+                                return first.localeCompare(second, 'uk');
+                            })
+                        };
+                    })
+                    .sort(function(first, second) {
+                        if (first.value !== second.value) {
+                            return first.value.localeCompare(second.value, 'uk');
+                        }
+                        return first.shift.localeCompare(second.shift, 'uk');
+                    });
+
+                renderUnmatchedEntries(unmatchedEntries, unmatchedEntriesWarning, unmatchedEntriesList);
+
+                if (unmatchedEntries.length > 0) {
+                    let statusMessage = `Сформовано ${dateEntries.length} дат. Збігів у people.csv: ${totalResolvedPeople}. Незіставлені записи показано окремим списком.`;
+                    if (skippedEntries.length > 0) {
+                        statusMessage += ` Пропущено значень: ${skippedEntries.length}.`;
+                    }
+                    messageDiv.textContent = statusMessage;
+                    return;
+                }
+
+                if (skippedEntries.length > 0) {
+                    messageDiv.textContent = `Сформовано ${dateEntries.length} дат. Усі прізвища зіставлено з people.csv. Пропущено значень: ${skippedEntries.length}.`;
                     return;
                 }
 
@@ -979,6 +1133,20 @@
                 for (const item of skippedShifts) {
                     const listItem = document.createElement('li');
                     listItem.textContent = `${item.label}: ${item.dates.join(', ')}`;
+                    warningList.appendChild(listItem);
+                }
+
+                warningBlock.classList.add('is-visible');
+            }
+
+            function renderSkippedEntries(skippedEntries, warningBlock, warningList) {
+                if (!warningBlock || !warningList || skippedEntries.length === 0) {
+                    return;
+                }
+
+                for (const item of skippedEntries) {
+                    const listItem = document.createElement('li');
+                    listItem.textContent = `${item.shift} -> ${item.value}: ${item.dates.join(', ')}`;
                     warningList.appendChild(listItem);
                 }
 
