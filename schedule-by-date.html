@@ -779,6 +779,61 @@
                 return clean.split(' ')[0] || '';
             }
 
+            function extractComparableWordTokens(value) {
+                const matches = (value || '').match(/[A-Za-zА-Яа-яІіЇїЄєҐґ'\-]+/g);
+                if (!matches) {
+                    return [];
+                }
+
+                return matches.map(function(token) {
+                    return normalizeComparableText(token);
+                }).filter(function(token) {
+                    return token.length > 0;
+                });
+            }
+
+            function extractCandidateNameTokens(row, normalizedSurname) {
+                const tokens = extractComparableWordTokens(row);
+                const surnameIndex = tokens.indexOf(normalizedSurname);
+                if (surnameIndex === -1) {
+                    return [];
+                }
+
+                return tokens.slice(surnameIndex + 1);
+            }
+
+            function doesCandidateMatchNameQualifiers(candidate, normalizedSurname, qualifiers) {
+                if (!qualifiers || qualifiers.length === 0) {
+                    return false;
+                }
+
+                const candidateNameTokens = extractCandidateNameTokens(candidate, normalizedSurname);
+                if (candidateNameTokens.length < qualifiers.length) {
+                    return false;
+                }
+
+                for (let index = 0; index < qualifiers.length; index += 1) {
+                    const qualifier = qualifiers[index];
+                    const candidateToken = candidateNameTokens[index];
+                    if (!candidateToken) {
+                        return false;
+                    }
+
+                    if (qualifier.length === 1) {
+                        if (!candidateToken.startsWith(qualifier)) {
+                            return false;
+                        }
+                        continue;
+                    }
+
+                    if (candidateToken !== qualifier) {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
             function formatDate(date, selectedYear) {
                 const day = String(date.getDate()).padStart(2, '0');
                 const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -946,7 +1001,7 @@
                 }
 
                 const candidates = peopleDirectoryState.rows.filter(function(row) {
-                    return normalizeComparableText(row).includes(normalizedSurname);
+                    return extractComparableWordTokens(row).includes(normalizedSurname);
                 });
                 if (candidates.length === 0) {
                     return null;
@@ -956,9 +1011,25 @@
                     return candidates[0];
                 }
 
+                const rawNameTokens = extractComparableWordTokens(rawName);
+                const nameQualifiers = rawNameTokens.slice(1);
+                if (nameQualifiers.length > 0) {
+                    const qualifiedCandidates = candidates.filter(function(candidate) {
+                        return doesCandidateMatchNameQualifiers(candidate, normalizedSurname, nameQualifiers);
+                    });
+
+                    if (qualifiedCandidates.length === 1) {
+                        return qualifiedCandidates[0];
+                    }
+
+                    if (qualifiedCandidates.length > 1) {
+                        candidates.splice(0, candidates.length, ...qualifiedCandidates);
+                    }
+                }
+
                 const initials = extractInitials(rawName);
                 if (!initials) {
-                    return candidates[0];
+                    return null;
                 }
 
                 const normalizedInitials = normalizeComparableText(initials);
@@ -968,7 +1039,7 @@
                     }
                 }
 
-                return candidates[0];
+                return null;
             }
 
             function escapeHtml(value) {
