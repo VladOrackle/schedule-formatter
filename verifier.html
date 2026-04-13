@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Верифікатор рапорта</title>
+    <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js" defer></script>
+    <style>
+        :root {
+            color-scheme: light;
+            --page-bg: #f4f6fa;
+            --card-bg: #ffffff;
+            --border: #d7dde8;
+            --border-strong: #b7c4d8;
+            --text: #1f2937;
+            --muted: #5b6679;
+            --accent: #245db3;
+            --accent-hover: #1d4c92;
+            --ok-bg: #ebf8ef;
+            --ok-border: #9fd3ae;
+            --ok-text: #21653b;
+            --warn-bg: #fff6df;
+            --warn-border: #e2c574;
+            --warn-text: #7a5400;
+            --error-bg: #fff0ee;
+            --error-border: #ebbbb4;
+            --error-text: #9c3e2d;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(180deg, #f8fafc 0%, #eef3fb 100%);
+            color: var(--text);
+        }
+
+        .page {
+            max-width: 1120px;
+            margin: 0 auto;
+            padding: 32px 20px 48px;
+        }
+
+        h1, h2, h3 {
+            margin: 0;
+        }
+
+        p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        .stack {
+            display: grid;
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px;
+            box-shadow: 0 10px 24px rgba(35, 62, 110, 0.06);
+        }
+
+        .hero {
+            display: grid;
+            gap: 10px;
+        }
+
+        .hero p strong {
+            color: var(--text);
+        }
+
+        .input-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+            margin-top: 4px;
+        }
+
+        .field {
+            display: grid;
+            gap: 8px;
+        }
+
+        .field label {
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .field input[type="file"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: #fbfcff;
+            color: var(--text);
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            margin-top: 4px;
+        }
+
+        button {
+            padding: 11px 16px;
+            border: 0;
+            border-radius: 10px;
+            background: var(--accent);
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: var(--accent-hover);
+        }
+
+        button:disabled {
+            opacity: 0.65;
+            cursor: default;
+        }
+
+        .message {
+            min-height: 24px;
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+
+        .summary-item {
+            padding: 14px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: #fbfcff;
+        }
+
+        .summary-item strong {
+            display: block;
+            font-size: 28px;
+            color: var(--text);
+            line-height: 1.1;
+            margin-bottom: 4px;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 16px;
+        }
+
+        .result-card {
+            display: none;
+            gap: 12px;
+        }
+
+        .result-card.is-visible {
+            display: grid;
+        }
+
+        .result-card ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .result-card li {
+            line-height: 1.5;
+            color: var(--text);
+        }
+
+        .result-card p {
+            color: inherit;
+        }
+
+        .result-card[data-tone="ok"] {
+            background: var(--ok-bg);
+            border-color: var(--ok-border);
+            color: var(--ok-text);
+        }
+
+        .result-card[data-tone="warn"] {
+            background: var(--warn-bg);
+            border-color: var(--warn-border);
+            color: var(--warn-text);
+        }
+
+        .result-card[data-tone="error"] {
+            background: var(--error-bg);
+            border-color: var(--error-border);
+            color: var(--error-text);
+        }
+
+        .hint {
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="stack">
+            <section class="card hero">
+                <h1>Верифікатор рапорта</h1>
+                <p>Оберіть <strong>ЖБД</strong> та <strong>рапорт</strong> у форматі <code>.docx</code>. Рапорт очікується у повному форматі з колонками звання, ПІБ і період участі. Перевірка звіряє лише <strong>дату початку</strong> чергування: для запису <code>з 01.01.2026 по 02.01.2026</code> порівнюється дата <code>01.01.2026</code>.</p>
+                <p class="hint">Кінець місяця на кшталт <code>31.01.2026</code> сприймається як окремий старт зміни в межах поточного місяця.</p>
+            </section>
+
+            <section class="card stack">
+                <h2>Файли</h2>
+                <div class="input-grid">
+                    <div class="field">
+                        <label for="referenceFileInput">ЖБД</label>
+                        <input id="referenceFileInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                    </div>
+                    <div class="field">
+                        <label for="reportFileInput">Рапорт</label>
+                        <input id="reportFileInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                    </div>
+                </div>
+                <div class="actions">
+                    <button id="verifyButton" type="button">Перевірити</button>
+                    <div id="message" class="message"></div>
+                </div>
+            </section>
+
+            <section class="card stack">
+                <h2>Підсумок</h2>
+                <div id="summaryGrid" class="summary-grid"></div>
+            </section>
+
+            <section class="results-grid">
+                <div id="cleanSection" class="card result-card" data-tone="ok">
+                    <h3>Розбіжностей не знайдено</h3>
+                    <p>Усі зіставлені записи рапорта збігаються з ЖБД за датами початку чергувань.</p>
+                </div>
+
+                <div id="missingSection" class="card result-card" data-tone="warn">
+                    <h3>Пропущені дати</h3>
+                    <p>Ці дати є в ЖБД, але відсутні в рапорті.</p>
+                    <ul id="missingList"></ul>
+                </div>
+
+                <div id="redundantSection" class="card result-card" data-tone="error">
+                    <h3>Зайві дати</h3>
+                    <p>Ці дати присутні в рапорті, але не знайдені в ЖБД.</p>
+                    <ul id="redundantList"></ul>
+                </div>
+
+                <div id="unresolvedSection" class="card result-card" data-tone="error">
+                    <h3>Незіставлені рядки</h3>
+                    <p>Для цих рядків не вдалося знайти однозначний відповідник у ЖБД.</p>
+                    <ul id="unresolvedList"></ul>
+                </div>
+
+                <div id="formatSection" class="card result-card" data-tone="warn">
+                    <h3>Нерозпізнані значення дат</h3>
+                    <p>Ці значення в рапорті не вдалося розібрати як дату або діапазон дат.</p>
+                    <ul id="formatList"></ul>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const PERSON_TITLES = [
+                'молодший лейтенант',
+                'старший лейтенант',
+                'головний сержант',
+                'майстер-сержант',
+                'штаб-сержант',
+                'старший сержант',
+                'молодший сержант',
+                'старший солдат',
+                'підполковник',
+                'лейтенант',
+                'капітан',
+                'сержант',
+                'солдат',
+                'майор'
+            ];
+
+            const referenceFileInput = document.getElementById('referenceFileInput');
+            const reportFileInput = document.getElementById('reportFileInput');
+            const verifyButton = document.getElementById('verifyButton');
+            const message = document.getElementById('message');
+            const summaryGrid = document.getElementById('summaryGrid');
+
+            const cleanSection = document.getElementById('cleanSection');
+            const missingSection = document.getElementById('missingSection');
+            const redundantSection = document.getElementById('redundantSection');
+            const unresolvedSection = document.getElementById('unresolvedSection');
+            const formatSection = document.getElementById('formatSection');
+
+            const missingList = document.getElementById('missingList');
+            const redundantList = document.getElementById('redundantList');
+            const unresolvedList = document.getElementById('unresolvedList');
+            const formatList = document.getElementById('formatList');
+
+            verifyButton.addEventListener('click', function() {
+                void verifyDocuments();
+            });
+
+            async function verifyDocuments() {
+                const referenceFile = referenceFileInput.files && referenceFileInput.files[0];
+                const reportFile = reportFileInput.files && reportFileInput.files[0];
+
+                resetResults();
+
+                if (!referenceFile || !reportFile) {
+                    message.textContent = 'Оберіть обидва файли перед перевіркою.';
+                    return;
+                }
+
+                verifyButton.disabled = true;
+                message.textContent = 'Читання документів і звірка...';
+
+                try {
+                    const [referenceXml, reportXml] = await Promise.all([
+                        readWordDocumentXml(referenceFile),
+                        readWordDocumentXml(reportFile)
+                    ]);
+
+                    const referenceData = parseReferenceDocument(referenceXml);
+                    const reportData = parseReportDocument(reportXml);
+                    const comparison = compareSchedules(referenceData, reportData);
+
+                    renderSummary(referenceData, reportData, comparison);
+                    renderResults(comparison);
+
+                    message.textContent = comparison.hasIssues
+                        ? 'Перевірку завершено. Розбіжності показано нижче.'
+                        : 'Перевірку завершено. Розбіжностей не знайдено.';
+                } catch (error) {
+                    message.textContent = error instanceof Error ? error.message : 'Не вдалося обробити документи.';
+                } finally {
+                    verifyButton.disabled = false;
+                }
+            }
+
+            async function readWordDocumentXml(file) {
+                const buffer = await file.arrayBuffer();
+                const xmlBytes = await extractDocumentXmlBytes(new Uint8Array(buffer));
+                if (!xmlBytes) {
+                    throw new Error(`У файлі "${file.name}" не знайдено word/document.xml.`);
+                }
+
+                return new TextDecoder('utf-8').decode(xmlBytes);
+            }
+
+            async function extractDocumentXmlBytes(zipBytes) {
+                if (window.fflate && typeof window.fflate.unzipSync === 'function') {
+                    const unzipped = window.fflate.unzipSync(zipBytes);
+                    return unzipped['word/document.xml'] || null;
+                }
+
+                return extractDocumentXmlBytesWithoutDependency(zipBytes);
+            }
+
+            async function extractDocumentXmlBytesWithoutDependency(zipBytes) {
+                const entry = findZipEntry(zipBytes, 'word/document.xml');
+                if (!entry) {
+                    return null;
+                }
+
+                const compressedBytes = zipBytes.subarray(entry.dataOffset, entry.dataOffset + entry.compressedSize);
+                if (entry.compressionMethod === 0) {
+                    return compressedBytes.slice();
+                }
+
+                if (entry.compressionMethod !== 8) {
+                    throw new Error('Файл .docx використовує непідтримуване стискання.');
+                }
+
+                if (typeof DecompressionStream === 'undefined') {
+                    throw new Error('Не вдалося відкрити .docx у браузері. Спробуйте оновити сторінку з доступом до мережі.');
+                }
+
+                const decompressionStream = new DecompressionStream('deflate-raw');
+                const decompressedResponse = new Response(
+                    new Blob([compressedBytes]).stream().pipeThrough(decompressionStream)
+                );
+                const decompressedBuffer = await decompressedResponse.arrayBuffer();
+                return new Uint8Array(decompressedBuffer);
+            }
+
+            function findZipEntry(zipBytes, fileName) {
+                const view = new DataView(zipBytes.buffer, zipBytes.byteOffset, zipBytes.byteLength);
+                const eocdOffset = findEndOfCentralDirectoryOffset(view);
+                if (eocdOffset < 0) {
+                    throw new Error('Файл не схожий на коректний .docx ZIP-архів.');
+                }
+
+                const centralDirectoryRecords = view.getUint16(eocdOffset + 10, true);
+                let centralDirectoryOffset = view.getUint32(eocdOffset + 16, true);
+
+                for (let index = 0; index < centralDirectoryRecords; index += 1) {
+                    if (view.getUint32(centralDirectoryOffset, true) !== 0x02014b50) {
+                        throw new Error('Не вдалося прочитати структуру .docx ZIP-архіву.');
+                    }
+
+                    const compressionMethod = view.getUint16(centralDirectoryOffset + 10, true);
+                    const compressedSize = view.getUint32(centralDirectoryOffset + 20, true);
+                    const fileNameLength = view.getUint16(centralDirectoryOffset + 28, true);
+                    const extraFieldLength = view.getUint16(centralDirectoryOffset + 30, true);
+                    const commentLength = view.getUint16(centralDirectoryOffset + 32, true);
+                    const localHeaderOffset = view.getUint32(centralDirectoryOffset + 42, true);
+                    const entryName = decodeZipFileName(zipBytes.subarray(
+                        centralDirectoryOffset + 46,
+                        centralDirectoryOffset + 46 + fileNameLength
+                    ));
+
+                    if (entryName === fileName) {
+                        if (view.getUint32(localHeaderOffset, true) !== 0x04034b50) {
+                            throw new Error('Пошкоджено локальний заголовок ZIP-архіву.');
+                        }
+
+                        const localFileNameLength = view.getUint16(localHeaderOffset + 26, true);
+                        const localExtraFieldLength = view.getUint16(localHeaderOffset + 28, true);
+                        return {
+                            compressionMethod: compressionMethod,
+                            compressedSize: compressedSize,
+                            dataOffset: localHeaderOffset + 30 + localFileNameLength + localExtraFieldLength
+                        };
+                    }
+
+                    centralDirectoryOffset += 46 + fileNameLength + extraFieldLength + commentLength;
+                }
+
+                return null;
+            }
+
+            function findEndOfCentralDirectoryOffset(view) {
+                const minOffset = Math.max(0, view.byteLength - 65557);
+                for (let offset = view.byteLength - 22; offset >= minOffset; offset -= 1) {
+                    if (view.getUint32(offset, true) === 0x06054b50) {
+                        return offset;
+                    }
+                }
+
+                return -1;
+            }
+
+            function decodeZipFileName(bytes) {
+                return new TextDecoder('utf-8').decode(bytes);
+            }
+
+            function parseReferenceDocument(xmlText) {
+                const rows = readFirstTableRows(xmlText);
+                const people = new Map();
+
+                for (const row of rows) {
+                    const nonEmptyCells = row.filter(function(cellText) {
+                        return cellText.length > 0;
+                    });
+
+                    if (nonEmptyCells.length < 2) {
+                        continue;
+                    }
+
+                    const dateIso = parseShortDateFromCell(nonEmptyCells[0]);
+                    if (!dateIso) {
+                        continue;
+                    }
+
+                    const extractedPeople = extractReferencePeople(nonEmptyCells[1]);
+                    for (const person of extractedPeople) {
+                        const key = buildReferencePersonKey(person);
+                        let record = people.get(key);
+
+                        if (!record) {
+                            record = {
+                                key: key,
+                                surname: person.surname,
+                                firstInitial: person.firstInitial,
+                                secondInitial: person.secondInitial,
+                                dates: new Set()
+                            };
+                            people.set(key, record);
+                        }
+
+                        record.dates.add(dateIso);
+                    }
+                }
+
+                return {
+                    people: people
+                };
+            }
+
+            function parseReportDocument(xmlText) {
+                const rows = readFirstTableRows(xmlText);
+                const rowsByIdentity = new Map();
+
+                for (const row of rows) {
+                    if (row.length < 4) {
+                        continue;
+                    }
+
+                    const fullNameCell = (row[2] || '').trim();
+                    const datesCell = (row[3] || '').trim();
+
+                    if (fullNameCell.includes('Прізвище') && datesCell === 'Період участі') {
+                        continue;
+                    }
+
+                    const identity = parseReportIdentity(fullNameCell);
+                    if (!identity) {
+                        continue;
+                    }
+
+                    const parsedDates = parseReportDates(datesCell);
+                    const existingRow = rowsByIdentity.get(identity.key);
+                    if (existingRow) {
+                        mergeReportDates(existingRow, parsedDates);
+                        continue;
+                    }
+
+                    rowsByIdentity.set(identity.key, {
+                        key: identity.key,
+                        label: identity.displayName,
+                        surname: identity.surname,
+                        firstName: identity.firstName,
+                        patronymic: identity.patronymic,
+                        firstInitial: identity.firstInitial,
+                        patronymicInitial: identity.patronymicInitial,
+                        dates: parsedDates.dates,
+                        rawValues: parsedDates.rawValues
+                    });
+                }
+
+                return {
+                    rows: Array.from(rowsByIdentity.values())
+                };
+            }
+
+            function readFirstTableRows(xmlText) {
+                const xmlDoc = new DOMParser().parseFromString(xmlText, 'application/xml');
+                const parserError = xmlDoc.getElementsByTagName('parsererror')[0];
+                if (parserError) {
+                    throw new Error('Не вдалося прочитати XML Word-документа.');
+                }
+
+                const tables = Array.from(xmlDoc.getElementsByTagNameNS('*', 'tbl'));
+                if (tables.length === 0) {
+                    throw new Error('У документі не знайдено таблицю.');
+                }
+
+                return getDirectChildrenByLocalName(tables[0], 'tr').map(function(row) {
+                    return getDirectChildrenByLocalName(row, 'tc').map(extractCellText);
+                });
+            }
+
+            function getDirectChildrenByLocalName(node, localName) {
+                return Array.from(node.childNodes).filter(function(child) {
+                    return child.nodeType === Node.ELEMENT_NODE && child.localName === localName;
+                });
+            }
+
+            function extractCellText(cell) {
+                const paragraphs = getDirectChildrenByLocalName(cell, 'p')
+                    .map(extractParagraphText)
+                    .filter(function(text) {
+                        return text.length > 0;
+                    });
+
+                return paragraphs.join('\n').trim();
+            }
+
+            function extractParagraphText(paragraph) {
+                const fragments = [];
+                collectWordText(paragraph, fragments);
+                return fragments.join('')
+                    .replace(/\u00a0/g, ' ')
+                    .replace(/[ \t]+\n/g, '\n')
+                    .replace(/\n[ \t]+/g, '\n')
+                    .replace(/[ \t]{2,}/g, ' ')
+                    .trim();
+            }
+
+            function collectWordText(node, fragments) {
+                for (const child of Array.from(node.childNodes)) {
+                    if (child.nodeType !== Node.ELEMENT_NODE) {
+                        continue;
+                    }
+
+                    if (child.localName === 't') {
+                        fragments.push(child.textContent || '');
+                        continue;
+                    }
+
+                    if (child.localName === 'tab') {
+                        fragments.push('\t');
+                        continue;
+                    }
+
+                    if (child.localName === 'br' || child.localName === 'cr') {
+                        fragments.push('\n');
+                        continue;
+                    }
+
+                    collectWordText(child, fragments);
+                }
+            }
+
+            function parseShortDateFromCell(cellText) {
+                const match = cellText.match(/\b(\d{2})\.(\d{2})\.(\d{2})\b/);
+                if (!match) {
+                    return null;
+                }
+
+                return `${expandYear(match[3])}-${match[2]}-${match[1]}`;
+            }
+
+            function parseLongDate(dateText) {
+                const match = dateText.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+                if (!match) {
+                    return null;
+                }
+
+                return `${match[3]}-${match[2]}-${match[1]}`;
+            }
+
+            function expandYear(twoDigitYear) {
+                const year = Number(twoDigitYear);
+                return String(2000 + year);
+            }
+
+            function extractReferencePeople(rosterText) {
+                const titlePattern = PERSON_TITLES
+                    .map(escapeRegExp)
+                    .sort(function(left, right) {
+                        return right.length - left.length;
+                    })
+                    .join('|');
+
+                const linePattern = new RegExp(
+                    `^(?:${titlePattern})\\s+([A-Za-zА-Яа-яІіЇїЄєҐґ'’\\-]+)\\s+([A-ZА-ЯІЇЄҐ])\\.\\s*([A-ZА-ЯІЇЄҐ])\\.?$`,
+                    'iu'
+                );
+
+                return rosterText.split(/\n+/).map(function(line) {
+                    return line.trim();
+                }).filter(function(line) {
+                    return line.length > 0;
+                }).map(function(line) {
+                    const match = linePattern.exec(line);
+                    if (!match) {
+                        return null;
+                    }
+
+                    return {
+                        surname: match[1],
+                        firstInitial: normalizeInitial(match[2]),
+                        secondInitial: normalizeInitial(match[3])
+                    };
+                }).filter(Boolean);
+            }
+
+            function buildReferencePersonKey(person) {
+                return buildPersonIdentityKey(person.surname, person.firstInitial, person.secondInitial);
+            }
+
+            function parseReportIdentity(fullNameCell) {
+                const normalizedValue = fullNameCell
+                    .replace(/\u00a0/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                const parts = normalizedValue.split(' ').filter(function(part) {
+                    return part.length > 0;
+                });
+
+                if (parts.length < 3) {
+                    return null;
+                }
+
+                const surname = normalizeCapitalization(parts[0]);
+                const firstName = normalizeCapitalization(parts[1]);
+                const patronymic = normalizeCapitalization(parts.slice(2).join(' '));
+                const firstInitial = normalizeInitial(firstName.charAt(0));
+                const patronymicInitial = normalizeInitial(patronymic.charAt(0));
+
+                return {
+                    key: buildPersonIdentityKey(surname, firstInitial, patronymicInitial),
+                    displayName: `${surname} ${firstName} ${patronymic}`,
+                    surname: surname,
+                    firstName: firstName,
+                    patronymic: patronymic,
+                    firstInitial: firstInitial,
+                    patronymicInitial: patronymicInitial
+                };
+            }
+
+            function parseReportDates(text) {
+                const dates = new Set();
+                const rawValues = [];
+                const normalizedText = text
+                    .replace(/\u00a0/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                const entries = normalizedText
+                    .split(';')
+                    .map(function(entry) {
+                        return entry.trim();
+                    })
+                    .filter(function(entry) {
+                        return entry.length > 0;
+                    });
+
+                for (const entry of entries) {
+                    const rangeMatch = entry.match(/^з\s+(\d{2}\.\d{2}\.\d{4})\s+по\s+\d{2}\.\d{2}\.\d{4}$/iu);
+                    if (rangeMatch) {
+                        const isoDate = parseLongDate(rangeMatch[1]);
+                        if (isoDate) {
+                            dates.add(isoDate);
+                            continue;
+                        }
+                    }
+
+                    const singleDateMatch = entry.match(/^(\d{2}\.\d{2}\.\d{4})$/u);
+                    if (singleDateMatch) {
+                        const isoDate = parseLongDate(singleDateMatch[1]);
+                        if (isoDate) {
+                            dates.add(isoDate);
+                            continue;
+                        }
+                    }
+
+                    rawValues.push(entry);
+                }
+
+                return {
+                    dates: dates,
+                    rawValues: rawValues
+                };
+            }
+
+            function mergeReportDates(target, source) {
+                for (const date of source.dates) {
+                    target.dates.add(date);
+                }
+
+                for (const rawValue of source.rawValues) {
+                    target.rawValues.push(rawValue);
+                }
+            }
+
+            function compareSchedules(referenceData, reportData) {
+                const missing = [];
+                const redundant = [];
+                const unresolved = [];
+                const formatIssues = [];
+
+                for (const reportRow of reportData.rows) {
+                    if (reportRow.rawValues.length > 0) {
+                        formatIssues.push({
+                            label: reportRow.label,
+                            values: reportRow.rawValues
+                        });
+                    }
+
+                    const referenceKey = buildPersonIdentityKey(
+                        reportRow.surname,
+                        reportRow.firstInitial,
+                        reportRow.patronymicInitial
+                    );
+                    const referenceRecord = referenceData.people.get(referenceKey);
+
+                    if (!referenceRecord) {
+                        unresolved.push({
+                            status: 'not-found',
+                            label: reportRow.label,
+                            details: `У ЖБД не знайдено збігу для ініціалів ${reportRow.firstInitial}.${reportRow.patronymicInitial}.`
+                        });
+                        continue;
+                    }
+
+                    const expectedDates = Array.from(referenceRecord.dates).sort();
+                    const actualDates = Array.from(reportRow.dates).sort();
+                    const missingDates = subtractDates(expectedDates, actualDates);
+                    const redundantDates = subtractDates(actualDates, expectedDates);
+
+                    if (missingDates.length > 0) {
+                        missing.push({
+                            label: reportRow.label,
+                            dates: missingDates
+                        });
+                    }
+
+                    if (redundantDates.length > 0) {
+                        redundant.push({
+                            label: reportRow.label,
+                            dates: redundantDates
+                        });
+                    }
+                }
+
+                missing.sort(compareIssueLabels);
+                redundant.sort(compareIssueLabels);
+                unresolved.sort(function(left, right) {
+                    return left.label.localeCompare(right.label, 'uk');
+                });
+                formatIssues.sort(compareIssueLabels);
+
+                const hasIssues = missing.length > 0
+                    || redundant.length > 0
+                    || unresolved.length > 0
+                    || formatIssues.length > 0;
+
+                return {
+                    hasIssues: hasIssues,
+                    missing: missing,
+                    redundant: redundant,
+                    unresolved: unresolved,
+                    formatIssues: formatIssues
+                };
+            }
+
+            function buildPersonIdentityKey(surname, firstInitial, secondInitial) {
+                return [
+                    normalizeName(surname),
+                    normalizeInitial(firstInitial),
+                    normalizeInitial(secondInitial)
+                ].join('|');
+            }
+
+            function normalizeCapitalization(value) {
+                const normalized = value
+                    .normalize('NFC')
+                    .replace(/[’']/g, '\'')
+                    .replace(/\u00a0/g, ' ')
+                    .trim();
+
+                if (!normalized) {
+                    return normalized;
+                }
+
+                return normalized.charAt(0).toLocaleUpperCase('uk') + normalized.slice(1).toLocaleLowerCase('uk');
+            }
+
+            function subtractDates(left, right) {
+                const rightSet = new Set(right);
+                return left.filter(function(date) {
+                    return !rightSet.has(date);
+                });
+            }
+
+            function compareIssueLabels(left, right) {
+                return left.label.localeCompare(right.label, 'uk');
+            }
+
+            function normalizeName(value) {
+                return value
+                    .normalize('NFC')
+                    .replace(/[’']/g, '\'')
+                    .replace(/\u00a0/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .toLocaleLowerCase('uk');
+            }
+
+            function normalizeInitial(value) {
+                return value
+                    .replace(/[.\s]/g, '')
+                    .trim()
+                    .toLocaleUpperCase('uk');
+            }
+
+            function escapeRegExp(value) {
+                return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+
+            function formatIsoDate(isoDate) {
+                const parts = isoDate.split('-');
+                if (parts.length !== 3) {
+                    return isoDate;
+                }
+
+                return `${parts[2]}.${parts[1]}.${parts[0]}`;
+            }
+
+            function renderSummary(referenceData, reportData, comparison) {
+                const unresolvedCount = comparison.unresolved.length;
+                const missingCount = comparison.missing.length;
+                const redundantCount = comparison.redundant.length;
+                const formatIssueCount = comparison.formatIssues.length;
+
+                const items = [
+                    {
+                        value: String(referenceData.people.size),
+                        label: 'Осіб у ЖБД'
+                    },
+                    {
+                        value: String(reportData.rows.length),
+                        label: 'Рядків у рапорті'
+                    },
+                    {
+                        value: String(missingCount),
+                        label: 'Осіб з пропущеними датами'
+                    },
+                    {
+                        value: String(redundantCount),
+                        label: 'Осіб із зайвими датами'
+                    },
+                    {
+                        value: String(unresolvedCount),
+                        label: 'Незіставлених рядків'
+                    },
+                    {
+                        value: String(formatIssueCount),
+                        label: 'Нерозпізнаних рядків дат'
+                    }
+                ];
+
+                summaryGrid.innerHTML = items.map(function(item) {
+                    return `
+                        <div class="summary-item">
+                            <strong>${item.value}</strong>
+                            <span>${item.label}</span>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            function renderResults(comparison) {
+                renderIssueSection(missingSection, missingList, comparison.missing, function(item) {
+                    return `<strong>${escapeHtml(item.label)}:</strong> ${escapeHtml(item.dates.map(formatIsoDate).join(', '))}`;
+                });
+
+                renderIssueSection(redundantSection, redundantList, comparison.redundant, function(item) {
+                    return `<strong>${escapeHtml(item.label)}:</strong> ${escapeHtml(item.dates.map(formatIsoDate).join(', '))}`;
+                });
+
+                renderIssueSection(unresolvedSection, unresolvedList, comparison.unresolved, function(item) {
+                    return `<strong>${escapeHtml(item.label)}:</strong> ${escapeHtml(item.details)}`;
+                });
+
+                renderIssueSection(formatSection, formatList, comparison.formatIssues, function(item) {
+                    return `<strong>${escapeHtml(item.label)}:</strong> ${escapeHtml(item.values.join(' | '))}`;
+                });
+
+                cleanSection.classList.toggle('is-visible', !comparison.hasIssues);
+            }
+
+            function renderIssueSection(section, list, items, formatter) {
+                section.classList.toggle('is-visible', items.length > 0);
+                list.innerHTML = items.map(function(item) {
+                    return `<li>${formatter(item)}</li>`;
+                }).join('');
+            }
+
+            function resetResults() {
+                message.textContent = '';
+                summaryGrid.innerHTML = '';
+                missingList.innerHTML = '';
+                redundantList.innerHTML = '';
+                unresolvedList.innerHTML = '';
+                formatList.innerHTML = '';
+
+                cleanSection.classList.remove('is-visible');
+                missingSection.classList.remove('is-visible');
+                redundantSection.classList.remove('is-visible');
+                unresolvedSection.classList.remove('is-visible');
+                formatSection.classList.remove('is-visible');
+            }
+
+            function escapeHtml(value) {
+                return value
+                    .replaceAll('&', '&amp;')
+                    .replaceAll('<', '&lt;')
+                    .replaceAll('>', '&gt;')
+                    .replaceAll('"', '&quot;')
+                    .replaceAll('\'', '&#39;');
+            }
+        });
+    </script>
+</body>
+</html>
